@@ -1,84 +1,54 @@
-function Observer(data) {
-    this.data = data;
-    this.walk(data);
+function MVVM(options) {
+    this.$options = options || {};
+    var data = this._data = this.$options.data;
+    var me = this;
+
+    // 数据代理
+    // 实现 vm.xxx -> vm._data.xxx
+    Object.keys(data).forEach(function(key) {
+        me._proxyData(key);
+    });
+
+    this._initComputed();
+
+    observe(data, this);
+
+    this.$compile = new Compile(options.el || document.body, this)
 }
 
-Observer.prototype = {
-    constructor: Observer,
-    walk: function(data) {
+MVVM.prototype = {
+    constructor: MVVM,
+    $watch: function(key, cb, options) {
+        new Watcher(this, key, cb);
+    },
+
+    _proxyData: function(key, setter, getter) {
         var me = this;
-        Object.keys(data).forEach(function(key) {
-            me.convert(key, data[key]);
-        });
-    },
-    convert: function(key, val) {
-        this.defineReactive(this.data, key, val);
-    },
-
-    defineReactive: function(data, key, val) {
-        var dep = new Dep();
-        var childObj = observe(val);
-
-        Object.defineProperty(data, key, {
-            enumerable: true, // 可枚举
-            configurable: false, // 不能再define
-            get: function() {
-                if (Dep.target) {
-                    dep.depend();
+        setter = setter ||
+            Object.defineProperty(me, key, {
+                configurable: false,
+                enumerable: true,
+                get: function proxyGetter() {
+                    return me._data[key];
+                },
+                set: function proxySetter(newVal) {
+                    me._data[key] = newVal;
                 }
-                return val;
-            },
-            set: function(newVal) {
-                if (newVal === val) {
-                    return;
-                }
-                val = newVal;
-                // 新的值是object的话，进行监听
-                childObj = observe(newVal);
-                // 通知订阅者
-                dep.notify();
-            }
-        });
-    }
-};
-
-function observe(value, vm) {
-    if (!value || typeof value !== 'object') {
-        return;
-    }
-
-    return new Observer(value);
-};
-
-
-var uid = 0;
-
-function Dep() {
-    this.id = uid++;
-    this.subs = [];
-}
-
-Dep.prototype = {
-    addSub: function(sub) {
-        this.subs.push(sub);
+            });
     },
 
-    depend: function() {
-        Dep.target.addDep(this);
-    },
-
-    removeSub: function(sub) {
-        var index = this.subs.indexOf(sub);
-        if (index != -1) {
-            this.subs.splice(index, 1);
+    _initComputed: function() {
+        var me = this;
+        var computed = this.$options.computed;
+        if (typeof computed === 'object') {
+            Object.keys(computed).forEach(function(key) {
+                Object.defineProperty(me, key, {
+                    get: typeof computed[key] === 'function'
+                        ? computed[key]
+                        : computed[key].get,
+                    set: function() {}
+                });
+            });
         }
-    },
-
-    notify: function() {
-        this.subs.forEach(function(sub) {
-            sub.update();
-        });
     }
 };
-
-Dep.target = null;
